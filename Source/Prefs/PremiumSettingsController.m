@@ -1,38 +1,28 @@
 #import "PremiumSettingsController.h"
 
-#define LOC(x) [tweakBundle localizedStringForKey:x value:nil table:nil]
-
-extern NSBundle *YTMusicUltimateBundle();
-
 @implementation PremiumSettingsController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
 
-    self.navigationItem.leftBarButtonItem = [self backButton];
-
-    UITableViewStyle style;
-    if (@available(iOS 13, *)) {
-        style = UITableViewStyleInsetGrouped;
-    } else {
-        style = UITableViewStyleGrouped;
-    }
-
-    self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:style];
+    self.title = LOC(@"PREMIUM_SETTINGS");
+    self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
     self.tableView.dataSource = self;
     self.tableView.delegate = self;
-    [self.view addSubview:_tableView];
+    [self.view addSubview:self.tableView];
     
-    [self.view addConstraint:[NSLayoutConstraint constraintWithItem:self.tableView attribute:NSLayoutAttributeCenterX relatedBy:NSLayoutRelationEqual toItem:self.view attribute:NSLayoutAttributeCenterX multiplier:1 constant:0]];
-    [self.view addConstraint:[NSLayoutConstraint constraintWithItem:self.tableView attribute:NSLayoutAttributeCenterY relatedBy:NSLayoutRelationEqual toItem:self.view attribute:NSLayoutAttributeCenterY multiplier:1 constant:0]];
-    [self.view addConstraint:[NSLayoutConstraint constraintWithItem:self.tableView attribute:NSLayoutAttributeWidth relatedBy:NSLayoutRelationEqual toItem:self.view attribute:NSLayoutAttributeWidth multiplier:1 constant:0]];
-    [self.view addConstraint:[NSLayoutConstraint constraintWithItem:self.tableView attribute:NSLayoutAttributeHeight relatedBy:NSLayoutRelationEqual toItem:self.view attribute:NSLayoutAttributeHeight multiplier:1 constant:0]];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.tableView.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.tableView.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [self.tableView.widthAnchor constraintEqualToAnchor:self.view.widthAnchor],
+        [self.tableView.heightAnchor constraintEqualToAnchor:self.view.heightAnchor]
+    ]];
 }
 
 #pragma mark - Table view stuff
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath{
-    return 60;
+    return UITableViewAutomaticDimension;
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
@@ -40,107 +30,63 @@ extern NSBundle *YTMusicUltimateBundle();
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return 2;
+    return 3;
 }
 
 -(UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath{
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"cell"];
 
-    NSBundle *tweakBundle = YTMusicUltimateBundle();
-    
-    if (cell == nil){
+    if (cell == nil) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"cell"];
     }
 
+    NSMutableDictionary *YTMUltimateDict = [NSMutableDictionary dictionaryWithDictionary:[[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"]];
+
     if (indexPath.section == 0) {
-        if (indexPath.row == 0) {
-            cell.textLabel.text = LOC(@"NO_ADS");
-            cell.textLabel.adjustsFontSizeToFitWidth = YES;
-            cell.detailTextLabel.text = LOC(@"NO_ADS_DESC");
-            cell.detailTextLabel.numberOfLines = 0;
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"cell1"];
+        
+        NSArray *settingsData = @[
+            @{@"title": LOC(@"NO_ADS"), @"desc": LOC(@"NO_ADS_DESC"), @"key": @"noAds"},
+            @{@"title": LOC(@"BACKGROUND_PLAYBACK"), @"desc": LOC(@"BACKGROUND_PLAYBACK_DESC"), @"key": @"backgroundPlayback"},
+            @{@"title": LOC(@"FORCE_PREMIUM"), @"desc": LOC(@"FORCE_PREMIUM_DESC"), @"key": @"premiumWorkaround"}
+        ];
 
-            if (@available(iOS 13, *)) {
-                cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-            } else {
-                cell.detailTextLabel.textColor = [UIColor systemGrayColor];
-            }
+        NSDictionary *data = settingsData[indexPath.row];
 
-            UISwitch *noAds = [[UISwitch alloc] initWithFrame:CGRectZero];
-            [noAds addTarget:self action:@selector(toggleNoAds:) forControlEvents:UIControlEventValueChanged];
-            noAds.on = [[NSUserDefaults standardUserDefaults] boolForKey:@"noAds_enabled"];
-            cell.accessoryView = noAds;
-        } if (indexPath.row == 1) {
-            cell.textLabel.text = LOC(@"BACKGROUND_PLAYBACK");
-            cell.textLabel.adjustsFontSizeToFitWidth = YES;
-            cell.detailTextLabel.text = LOC(@"BACKGROUND_PLAYBACK_DESC");
-            cell.detailTextLabel.numberOfLines = 0;
+        cell.textLabel.text = data[@"title"];
+        cell.textLabel.adjustsFontSizeToFitWidth = YES;
+        cell.detailTextLabel.text = data[@"desc"];
+        cell.detailTextLabel.numberOfLines = 0;
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
 
-            if (@available(iOS 13, *)) {
-                cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-            } else {
-                cell.detailTextLabel.textColor = [UIColor systemGrayColor];
-            }
-            UISwitch *backgroundPlayback = [[UISwitch alloc] initWithFrame:CGRectZero];
-            [backgroundPlayback addTarget:self action:@selector(toggleBackgroundPlayback:) forControlEvents:UIControlEventValueChanged];
-            backgroundPlayback.on = [[NSUserDefaults standardUserDefaults] boolForKey:@"backgroundPlayback_enabled"];
-            cell.accessoryView = backgroundPlayback;
-        }
+        ABCSwitch *switchControl = [[NSClassFromString(@"ABCSwitch") alloc] init];
+        switchControl.onTintColor = [UIColor colorWithRed:30.0/255.0 green:150.0/255.0 blue:245.0/255.0 alpha:1.0];
+        [switchControl addTarget:self action:@selector(toggleSwitch:) forControlEvents:UIControlEventValueChanged];
+        switchControl.tag = indexPath.row;
+        switchControl.on = [YTMUltimateDict[data[@"key"]] boolValue];
+        cell.accessoryView = switchControl;
     }
 
     return cell;
 }
 
-#pragma mark - Nav bar stuff
-- (NSString *)title {
-    NSBundle *tweakBundle = YTMusicUltimateBundle();
-    return LOC(@"PREMIUM_SETTINGS");
+- (BOOL)tableView:(UITableView *)tableView shouldHighlightRowAtIndexPath:(NSIndexPath *)indexPath {
+    return NO;
 }
 
-- (UIBarButtonItem *)backButton {
-    UIBarButtonItem *item;
+- (void)toggleSwitch:(UISwitch *)sender {
+    NSArray *settingsData = @[
+        @{@"key": @"noAds"},
+        @{@"key": @"backgroundPlayback"},
+        @{@"key": @"premiumWorkaround"},
+    ];
 
-    if (@available(iOS 13, *)) {
-        item = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"chevron.left"]
-                            style:UIBarButtonItemStylePlain
-                            target:self
-                            action:@selector(back)];
-    } else {
-        NSBundle *tweakBundle = YTMusicUltimateBundle();
-        item = [[UIBarButtonItem alloc] initWithTitle:LOC(@"BACK")
-                            style:UIBarButtonItemStylePlain
-                            target:self
-                            action:@selector(back)];
-    }
+    NSDictionary *data = settingsData[sender.tag];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSMutableDictionary *YTMUltimateDict = [NSMutableDictionary dictionaryWithDictionary:[defaults dictionaryForKey:@"YTMUltimate"]];
 
-    return item;
-}
-
-@end
-
-@implementation PremiumSettingsController (Privates)
-
-- (void)back {
-    [self.presentingViewController dismissViewControllerAnimated:YES completion:nil];
-}
-
-- (void)toggleNoAds:(UISwitch *)sender {
-    if ([sender isOn]) {
-        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"noAds_enabled"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    } else {
-        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"noAds_enabled"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
-}
-
-- (void)toggleBackgroundPlayback:(UISwitch *)sender {
-    if ([sender isOn]) {
-        [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"backgroundPlayback_enabled"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    } else {
-        [[NSUserDefaults standardUserDefaults] setBool:NO forKey:@"backgroundPlayback_enabled"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
+    [YTMUltimateDict setObject:@([sender isOn]) forKey:data[@"key"]];
+    [defaults setObject:YTMUltimateDict forKey:@"YTMUltimate"];
 }
 
 @end

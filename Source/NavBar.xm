@@ -1,9 +1,13 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
-static BOOL buttonEnabled(NSString *key) {
-    return [[NSUserDefaults standardUserDefaults] boolForKey:key];
+static BOOL YTMU(NSString *key) {
+    NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
+    return [YTMUltimateDict[key] boolValue];
 }
+
+@interface YTMNavigationBarView : UIView
+@end
 
 @interface QTMButton : UIButton
 @property (nonatomic, copy, readwrite) NSString *accessibilityIdentifier;
@@ -12,28 +16,40 @@ static BOOL buttonEnabled(NSString *key) {
 @interface YTMSortFilterButton : UIButton
 @end
 
-%group NavBarItems
 %hook QTMButton
 - (void)layoutSubviews {
     %orig;
-    if (buttonEnabled(@"hideHistoryButton_enabled")) {
+    if (YTMU(@"YTMUltimateIsEnabled") && YTMU(@"hideHistoryButton")) {
         if ([self.accessibilityIdentifier isEqualToString:@"id.navigation.history.button"]) {
             self.hidden = YES;
         }
     }
-    if (buttonEnabled(@"hideCastButton_enabled")) {
+    if (YTMU(@"YTMUltimateIsEnabled") && YTMU(@"hideCastButton")) {
         if ([self.accessibilityIdentifier isEqualToString:@"id.mdx.playbackroute.button"]) {
             self.hidden = YES;
         }
     }
 }
 %end
-%end
 
-%ctor {
-    BOOL isEnabled = ([[NSUserDefaults standardUserDefaults] objectForKey:@"YTMUltimateIsEnabled"] != nil) ? [[NSUserDefaults standardUserDefaults] boolForKey:@"YTMUltimateIsEnabled"] : YES;
+%hook YTMNavigationBarView
+- (void)layoutSubviews {
+    %orig;
 
-    if (isEnabled) {
-        %init(NavBarItems);
+    NSArray *subviews = [self subviews];
+
+    UIView *sortFilterButton = nil;
+    for (UIView *subview in subviews) {
+        if ([subview isKindOfClass:NSClassFromString(@"YTMSortFilterButton")]) {
+            sortFilterButton = subview;
+            break;
+        }
+    }
+
+    if (YTMU(@"YTMUltimateIsEnabled") && YTMU(@"hideFilterButton")) {
+        if (sortFilterButton != nil) {
+            [sortFilterButton removeFromSuperview];
+        }
     }
 }
+%end

@@ -1,9 +1,14 @@
+#import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <dlfcn.h>
+#import <rootless.h>
+#import "Source/Headers/YTAlertView.h"
+#import "Source/Headers/Localization.h"
 
 #define YT_BUNDLE_ID @"com.google.ios.youtubemusic"
 #define YT_BUNDLE_NAME @"YouTubeMusic"
 #define YT_NAME @"YouTube Music"
+#define YTMULoginAlert @"YTMULoginAlert"
 
 @interface SSOConfiguration : NSObject
 @end
@@ -17,10 +22,13 @@ static NSString *accessGroupID() {
                            nil];
     CFDictionaryRef result = nil;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, (CFTypeRef *)&result);
-    if (status == errSecItemNotFound)
+    if (status == errSecItemNotFound) {
         status = SecItemAdd((__bridge CFDictionaryRef)query, (CFTypeRef *)&result);
-        if (status != errSecSuccess)
+        if (status != errSecSuccess) {
             return nil;
+        }
+    }
+
     NSString *accessGroup = [(__bridge NSDictionary *)result objectForKey:(__bridge NSString *)kSecAttrAccessGroup];
 
     return accessGroup;
@@ -28,32 +36,32 @@ static NSString *accessGroupID() {
 
 %group SideloadingFixes
 //Fix login (2) - Ginsu & AhmedBakfir
-%hook SSOSafariSignIn
-- (void)signInWithURL:(id)arg1 presentationAnchor:(id)arg2 completionHandler:(id)arg3 {
-    NSURL *origURL = arg1;
+// %hook SSOSafariSignIn
+// - (void)signInWithURL:(id)arg1 presentationAnchor:(id)arg2 completionHandler:(id)arg3 {
+//     NSURL *origURL = arg1;
 
-    NSURLComponents *urlComponents = [[NSURLComponents alloc] initWithURL:origURL resolvingAgainstBaseURL:NO];
-    NSMutableArray *newQueryItems = [urlComponents.queryItems mutableCopy];
-    for (NSURLQueryItem *queryItem in urlComponents.queryItems) {
-        if ([queryItem.name isEqualToString:@"system_version"]
-            || [queryItem.name isEqualToString:@"app_version"]
-            || [queryItem.name isEqualToString:@"kdlc"]
-            || [queryItem.name isEqualToString:@"kss"]
-            || [queryItem.name isEqualToString:@"lib_ver"]
-            || [queryItem.name isEqualToString:@"device_model"]) {
-            [newQueryItems removeObject:queryItem];
-        }
-    }
-    urlComponents.queryItems = [newQueryItems copy];
-    %orig(urlComponents.URL, arg2, arg3);
-}
-%end
+//     NSURLComponents *urlComponents = [[NSURLComponents alloc] initWithURL:origURL resolvingAgainstBaseURL:NO];
+//     NSMutableArray *newQueryItems = [urlComponents.queryItems mutableCopy];
+//     for (NSURLQueryItem *queryItem in urlComponents.queryItems) {
+//         if ([queryItem.name isEqualToString:@"system_version"]
+//             || [queryItem.name isEqualToString:@"app_version"]
+//             || [queryItem.name isEqualToString:@"kdlc"]
+//             || [queryItem.name isEqualToString:@"kss"]
+//             || [queryItem.name isEqualToString:@"lib_ver"]
+//             || [queryItem.name isEqualToString:@"device_model"]) {
+//             [newQueryItems removeObject:queryItem];
+//         }
+//     }
+//     urlComponents.queryItems = [newQueryItems copy];
+//     %orig(urlComponents.URL, arg2, arg3);
+// }
+// %end
 
 //Force enable safari sign-in
 %hook SSOConfiguration
-- (BOOL)shouldEnableSafariSignIn {
-    return YES;
-}
+- (BOOL)shouldEnableSafariSignIn { return YES; }
+- (BOOL)temporarilyDisableSafariSignIn { return NO; }
+- (void)setTemporarilyDisableSafariSignIn:(BOOL)arg1 { return %orig(NO); }
 %end
 
 %hook SSOKeychainHelper
@@ -192,6 +200,91 @@ static NSString *accessGroupID() {
 %end
 %end
 
+NSDictionary *(*orig_infoDictionary)(id self, SEL _cmd);
+NSDictionary *replaceInfoDict(id self, SEL _cmd) {
+    NSDictionary *originalInfoDictionary = orig_infoDictionary(self, _cmd);
+    NSString *bundleIdentifier = originalInfoDictionary[@"CFBundleIdentifier"];
+
+    if (![bundleIdentifier isEqualToString:YT_BUNDLE_ID]) {
+        NSMutableDictionary *newInfoDictionary = [NSMutableDictionary dictionaryWithDictionary:originalInfoDictionary];
+        [newInfoDictionary setValue:YT_BUNDLE_ID forKey:@"CFBundleIdentifier"];
+        return newInfoDictionary;
+    }
+
+    return originalInfoDictionary;
+}
+
+BOOL isFirstTime = YES;
+
+@interface InitWorkaround : UIViewController
+@property (nonatomic, copy) void (^completion)(void);
+@end
+
+@implementation InitWorkaround
+- (void)viewDidLoad {
+    [super viewDidLoad];
+
+    isFirstTime = NO;
+
+    UIActivityIndicatorView *activityIndicator = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
+    activityIndicator.color = [UIColor whiteColor];
+    activityIndicator.center = self.view.center;
+    [self.view addSubview:activityIndicator];
+    [activityIndicator startAnimating];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        MSHookMessageEx(objc_getClass("NSBundle"), @selector(infoDictionary), (IMP)replaceInfoDict, (IMP *)&orig_infoDictionary);
+
+        [self dismissViewControllerAnimated:YES completion:^{
+            if (self.completion) {
+                self.completion();
+            }
+        }];
+    });
+}
+
+@end
+
+@interface SFAuthenticationViewController : UIViewController
+- (void)remoteViewControllerWillDismiss:(id)remoteVC;
+@end
+
+%hook SFAuthenticationViewController
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+
+    if (isFirstTime) {
+        InitWorkaround *workaround = [[InitWorkaround alloc] init];
+        workaround.completion = ^{
+            [self dismissViewControllerAnimated:YES completion:^{
+                if ([self respondsToSelector:@selector(remoteViewControllerWillDismiss:)]) {
+                    [self performSelector:@selector(remoteViewControllerWillDismiss:)];
+                }
+
+                YTAlertView *alertView = [%c(YTAlertView) infoDialog];
+                alertView.title = LOC(@"WARNING");
+                alertView.subtitle = LOC(@"RETRY_LOGIN");
+                [alertView show];
+            }];
+        };
+
+        [self presentViewController:workaround animated:YES completion:nil];
+    }
+}
+%end
+
+%hook YTMFirstTimeSignInViewController
+- (void)viewDidDisappear:(bool)arg1 {
+    %orig;
+
+    YTAlertView *alertView = [%c(YTAlertView) infoDialog];
+    alertView.title = LOC(@"WARNING");
+    alertView.subtitle = LOC(@"LOGIN_INFO");
+    [alertView show];
+}
+%end
+
 %ctor {
+    %init;
     %init(SideloadingFixes);
 }
